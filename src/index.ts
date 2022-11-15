@@ -1,5 +1,7 @@
 import { parse, stringify } from "yaml";
 import {
+  isReferenceObject,
+  isSchemaObject,
   MediaTypeObject,
   OpenAPIObject,
   OperationObject,
@@ -193,7 +195,9 @@ function traverseDefinition(
 ): SchemaEntry {
   schema = callback(schema);
 
-  if ("allOf" in schema || "anyOf" in schema || "oneOf" in schema) {
+  if(!isSchemaObject(schema)) return schema;
+
+  if ((schema.allOf ?? schema.anyOf ?? schema.oneOf) !== undefined) {
     return {
       ...schema,
       allOf: schema.allOf?.map((subSchema) =>
@@ -206,13 +210,12 @@ function traverseDefinition(
         traverseDefinition(subSchema, callback)
       ),
     };
-  } else if ("not" in schema && schema.not !== undefined) {
+  } else if (schema.not !== undefined) {
     return {
       ...schema,
       not: traverseDefinition(schema.not, callback),
     };
-  } else if (
-    "type" in schema &&
+  } else if (isSchemaObject(schema) &&
     schema.type === "array" &&
     schema.items !== undefined
   ) {
@@ -220,9 +223,7 @@ function traverseDefinition(
       ...schema,
       items: traverseDefinition(schema.items, callback),
     };
-  } else if (
-    "type" in schema &&
-    schema.type === "object" &&
+  } else if (isSchemaObject(schema) &&   schema.type === "object" &&
     schema.properties !== undefined
   ) {
     return {
@@ -243,7 +244,8 @@ function filterObjectProperties(
   schema: SchemaEntry,
   condition: (field: SchemaEntry) => boolean
 ): SchemaEntry {
-  if (!("properties" in schema) || schema.properties == null) return schema;
+  if(!isSchemaObject(schema)) return schema;
+  if (schema.properties === undefined) return schema;
 
   return {
     ...schema,
@@ -273,7 +275,7 @@ function updateDuplicatedSchemaRef(
   append: string
 ): (schema: SchemaEntry) => SchemaEntry {
   return (schema) => {
-    if (!("$ref" in schema)) return schema;
+    if(!isReferenceObject(schema)) return schema;
 
     return {
       ...schema,
