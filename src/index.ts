@@ -209,6 +209,16 @@ function traverseDefinition(
       oneOf: schema.oneOf?.map((subSchema) =>
         traverseDefinition(subSchema, callback)
       ),
+      discriminator: (schema.discriminator !== undefined) ? {
+        ...schema.discriminator,
+        mapping: (schema.discriminator.mapping !== undefined)
+        ?  Object.fromEntries(Object.entries(schema.discriminator.mapping).map(([name, $ref]) => [name, traverseBareReference($ref, callback)]))
+        : Object.fromEntries( ([...(schema.allOf ?? []), ...(schema.anyOf ?? []), ...(schema.oneOf ?? [])].map((definition) => {
+          if(!isReferenceObject(definition)) return [null, traverseDefinition(definition, callback)];
+
+          return [definition.$ref.split('/').pop(), traverseBareReference(definition.$ref, callback)];
+        }).filter(([name, $ref]) => name !== null)))
+      } : undefined
     };
   } else if (schema.not !== undefined) {
     return {
@@ -238,6 +248,13 @@ function traverseDefinition(
   }
 
   return schema;
+}
+
+function traverseBareReference($ref: ReferenceObject["$ref"], callback: (schema: SchemaEntry) => SchemaEntry): ReferenceObject["$ref"] {
+  const traversedDefinition =  traverseDefinition({$ref}, callback);
+          if(!isReferenceObject(traversedDefinition)) throw new Error(`Invalid definition ${JSON.stringify(traversedDefinition)}`);
+
+          return traversedDefinition.$ref
 }
 
 function filterObjectProperties(
