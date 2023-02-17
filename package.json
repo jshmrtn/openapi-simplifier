@@ -1,6 +1,6 @@
 {
   "name": "@jshmrtn/openapi-simplifier",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OpenAPI Schema simplification to help with code generators",
   "main": "dist/index.js",
   "scripts": {
