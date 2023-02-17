@@ -5,9 +5,10 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
-    "test": "npm run test:lint && npm run test:unit",
+    "test": "npm run test:lint && npm run test:types && npm run test:unit",
     "test:lint": "eslint .",
     "test:lint:fix": "eslint --fix .",
+    "test:types": "tsc --noEmit",
     "test:unit": "jest"
   },
   "author": {
