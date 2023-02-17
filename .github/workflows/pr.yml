@@ -1,0 +1,19 @@
+on:
+  pull_request:
+    branches:
+      - "*"
+  workflow_dispatch: {}
+
+name: "Pull Request"
+
+jobs:
+  test:
+    name: "Test"
+
+    uses: ./.github/workflows/part_test.yml
+
+  build:
+    name: "Build"
+
+    uses: ./.github/workflows/part_build.yml
+

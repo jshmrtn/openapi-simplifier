@@ -1,0 +1,20 @@
+on:
+  push:
+    tags:
+      - "v[12].[0-9]+.[0-9]+-beta.[0-9]+"
+
+name: "Beta Tag"
+
+jobs:
+  release:
+    name: "Release"
+
+    uses: ./.github/workflows/part_release.yml
+    with:
+      releaseName: "${{ github.ref_name }}"
+
+  build:
+    name: "Build"
+
+    uses: ./.github/workflows/part_build.yml
+

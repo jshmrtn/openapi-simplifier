@@ -1,0 +1,71 @@
+on:
+  workflow_call: {}
+
+name: "Test"
+
+env:
+  BUILD_EMBEDDED: true
+
+jobs:
+  lint:
+    name: Lint
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        id: setupNode
+        with:
+          node-version-file: '.tool-versions'
+      - uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: node_modules-${{ runner.os }}-${{ steps.setupNode.outputs.node-version }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            node_modules-${{ runner.os }}-${{ steps.setupNode.outputs.node-version }}-
+            node_modules-${{ runner.os }}-
+      - run: npm ci
+      - run: npm run test:lint
+
+  unit:
+    name: Unit Tests
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        id: setupNode
+        with:
+          node-version-file: '.tool-versions'
+      - uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: node_modules-${{ runner.os }}-${{ steps.setupNode.outputs.node-version }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            node_modules-${{ runner.os }}-${{ steps.setupNode.outputs.node-version }}-
+            node_modules-${{ runner.os }}-
+      - run: npm ci
+      - run: npm run test:unit
+
+  types:
+    name: Types
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        id: setupNode
+        with:
+          node-version-file: '.tool-versions'
+      - uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: node_modules-${{ runner.os }}-${{ steps.setupNode.outputs.node-version }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            node_modules-${{ runner.os }}-${{ steps.setupNode.outputs.node-version }}-
+            node_modules-${{ runner.os }}-
+      - run: npm ci
+      - run: npm run test:types

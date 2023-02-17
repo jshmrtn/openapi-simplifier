@@ -1,5 +1,10 @@
 # OpenAPI Simplifier
 
+[![.github/workflows/branch_main.yml](https://github.com/jshmrtn/openapi-simplifier/actions/workflows/branch_main.yml/badge.svg)](https://github.com/jshmrtn/openapi-simplifier/actions/workflows/branch_main.yml)
+![NPM License](https://img.shields.io/npm/l/@jshmrtn/openapi-simplifier)
+[![Last Updated](https://img.shields.io/github/last-commit/jshmrtn/openapi-simplifier.svg)](https://github.com/jshmrtn/openapi-simplifier/commits/main)
+
+
 Little tools that simplifies the OpenPI schema to a simpler subset.
 
 ## Implemented Simplifications

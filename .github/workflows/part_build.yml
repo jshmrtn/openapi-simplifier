@@ -1,0 +1,30 @@
+on:
+  workflow_call: {}
+
+name: "Build"
+
+jobs:
+  build:
+    name: Build
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        id: setupNode
+        with:
+          node-version-file: '.tool-versions'
+      - uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: node_modules-${{ runner.os }}-${{ steps.setupNode.outputs.node-version }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            node_modules-${{ runner.os }}-${{ steps.setupNode.outputs.node-version }}-
+            node_modules-${{ runner.os }}-
+      - run: npm ci
+      - run: npm run build 
+      - uses: actions/upload-artifact@v3
+        with:
+          name: build
+          path: dist
