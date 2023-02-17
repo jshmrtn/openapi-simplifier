@@ -10,7 +10,18 @@
     "test:lint:fix": "eslint --fix .",
     "test:unit": "jest"
   },
-  "author": "",
+  "author": {
+    "name": "JOSHMARTIN GmbH",
+    "email": "info@joshmartin.ch",
+    "url": "https://joshmartin.ch"
+  },
+  "contributors": [
+    {
+      "name": "Jonatan Männchen",
+      "email": "jonatan@maennchen.ch",
+      "url": "https://maennchen.dev"
+    }
+  ],
   "license": "MIT",
   "devDependencies": {
     "@jest/globals": "^29.4.3",
