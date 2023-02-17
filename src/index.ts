@@ -15,14 +15,14 @@ import {
 
 type SchemaEntry = SchemaObject | ReferenceObject;
 
-export function simplifySchema(content: string): string {
-  return compose(
-    compose(
-      compose(readSchema, duplicateReadWriteSchemas),
-      repointSchemaReferences
-    ),
-    (schema) => stringify(schema, { indent: 2, aliasDuplicateObjects: false })
+export function simplifySchemaString(content: string): string {
+  return compose(compose(readSchema, simplifySchema), (schema) =>
+    stringify(schema, { indent: 2, aliasDuplicateObjects: false })
   )(content);
+}
+
+export function simplifySchema(content: OpenAPIObject): OpenAPIObject {
+  return compose(duplicateReadWriteSchemas, repointSchemaReferences)(content);
 }
 
 function readSchema(content: string): OpenAPIObject {
@@ -117,7 +117,10 @@ function repointRequestparameter(
 
   return {
     ...schema,
-    schema: updateDuplicatedSchemaRef("Write")(schema.schema),
+    schema: traverseDefinition(
+      schema.schema,
+      updateDuplicatedSchemaRef("Write")
+    ),
   };
 }
 
@@ -143,7 +146,6 @@ function repointResponse(
   if (!isResponseObject(schema)) return schema;
   if (!("content" in schema)) return schema;
   if (schema.content === undefined) return schema;
-
   return {
     ...schema,
     content: Object.fromEntries(
@@ -163,7 +165,10 @@ function repointMediaType(
 
   return {
     ...schema,
-    schema: updateDuplicatedSchemaRef(append)(schema.schema),
+    schema: traverseDefinition(
+      schema.schema,
+      updateDuplicatedSchemaRef(append)
+    ),
   };
 }
 
@@ -195,7 +200,7 @@ function traverseDefinition(
 ): SchemaEntry {
   schema = callback(schema);
 
-  if(!isSchemaObject(schema)) return schema;
+  if (!isSchemaObject(schema)) return schema;
 
   if ((schema.allOf ?? schema.anyOf ?? schema.oneOf) !== undefined) {
     return {
@@ -209,23 +214,50 @@ function traverseDefinition(
       oneOf: schema.oneOf?.map((subSchema) =>
         traverseDefinition(subSchema, callback)
       ),
-      discriminator: (schema.discriminator !== undefined) ? {
-        ...schema.discriminator,
-        mapping: (schema.discriminator.mapping !== undefined)
-        ?  Object.fromEntries(Object.entries(schema.discriminator.mapping).map(([name, $ref]) => [name, traverseBareReference($ref, callback)]))
-        : Object.fromEntries( ([...(schema.allOf ?? []), ...(schema.anyOf ?? []), ...(schema.oneOf ?? [])].map((definition) => {
-          if(!isReferenceObject(definition)) return [null, traverseDefinition(definition, callback)];
+      discriminator:
+        schema.discriminator !== undefined
+          ? {
+              ...schema.discriminator,
+              mapping:
+                schema.discriminator.mapping !== undefined
+                  ? Object.fromEntries(
+                      Object.entries(schema.discriminator.mapping).map(
+                        ([name, $ref]) => [
+                          name,
+                          traverseBareReference($ref, callback),
+                        ]
+                      )
+                    )
+                  : Object.fromEntries(
+                      [
+                        ...(schema.allOf ?? []),
+                        ...(schema.anyOf ?? []),
+                        ...(schema.oneOf ?? []),
+                      ]
+                        .map((definition) => {
+                          if (!isReferenceObject(definition))
+                            return [
+                              null,
+                              traverseDefinition(definition, callback),
+                            ];
 
-          return [definition.$ref.split('/').pop(), traverseBareReference(definition.$ref, callback)];
-        }).filter(([name, $ref]) => name !== null)))
-      } : undefined
+                          return [
+                            definition.$ref.split("/").pop(),
+                            traverseBareReference(definition.$ref, callback),
+                          ];
+                        })
+                        .filter(([name, $ref]) => name !== null)
+                    ),
+            }
+          : undefined,
     };
   } else if (schema.not !== undefined) {
     return {
       ...schema,
       not: traverseDefinition(schema.not, callback),
     };
-  } else if (isSchemaObject(schema) &&
+  } else if (
+    isSchemaObject(schema) &&
     schema.type === "array" &&
     schema.items !== undefined
   ) {
@@ -233,7 +265,9 @@ function traverseDefinition(
       ...schema,
       items: traverseDefinition(schema.items, callback),
     };
-  } else if (isSchemaObject(schema) &&   schema.type === "object" &&
+  } else if (
+    isSchemaObject(schema) &&
+    schema.type === "object" &&
     schema.properties !== undefined
   ) {
     return {
@@ -250,28 +284,35 @@ function traverseDefinition(
   return schema;
 }
 
-function traverseBareReference($ref: ReferenceObject["$ref"], callback: (schema: SchemaEntry) => SchemaEntry): ReferenceObject["$ref"] {
-  const traversedDefinition =  traverseDefinition({$ref}, callback);
-          if(!isReferenceObject(traversedDefinition)) throw new Error(`Invalid definition ${JSON.stringify(traversedDefinition)}`);
+function traverseBareReference(
+  $ref: ReferenceObject["$ref"],
+  callback: (schema: SchemaEntry) => SchemaEntry
+): ReferenceObject["$ref"] {
+  const traversedDefinition = traverseDefinition({ $ref }, callback);
+  if (!isReferenceObject(traversedDefinition))
+    throw new Error(
+      `Invalid definition ${JSON.stringify(traversedDefinition)}`
+    );
 
-          return traversedDefinition.$ref
+  return traversedDefinition.$ref;
 }
 
 function filterObjectProperties(
   schema: SchemaEntry,
   condition: (field: SchemaEntry) => boolean
 ): SchemaEntry {
-  if(!isSchemaObject(schema)) return schema;
+  if (!isSchemaObject(schema)) return schema;
   if (schema.properties === undefined) return schema;
 
-  return {
-    ...schema,
-    properties: Object.fromEntries(
-      Object.entries(schema.properties).filter(([name, field]) =>
-        condition(field)
-      )
-    ),
-  };
+  const properties = Object.fromEntries(
+    Object.entries(schema.properties).filter(([name, field]) =>
+      condition(field)
+    )
+  );
+
+  const required = schema.required?.filter((name) => name in properties);
+
+  return { ...schema, properties, required };
 }
 
 function removeWriteOnly(schema: SchemaEntry): SchemaEntry {
@@ -292,7 +333,7 @@ function updateDuplicatedSchemaRef(
   append: string
 ): (schema: SchemaEntry) => SchemaEntry {
   return (schema) => {
-    if(!isReferenceObject(schema)) return schema;
+    if (!isReferenceObject(schema)) return schema;
 
     return {
       ...schema,
