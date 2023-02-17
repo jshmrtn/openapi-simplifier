@@ -2,15 +2,15 @@ import { parse, stringify } from "yaml";
 import {
   isReferenceObject,
   isSchemaObject,
-  MediaTypeObject,
-  OpenAPIObject,
-  OperationObject,
-  ParameterObject,
-  PathItemObject,
-  ReferenceObject,
-  RequestBodyObject,
-  ResponseObject,
-  SchemaObject,
+  type MediaTypeObject,
+  type OpenAPIObject,
+  type OperationObject,
+  type ParameterObject,
+  type PathItemObject,
+  type ReferenceObject,
+  type RequestBodyObject,
+  type ResponseObject,
+  type SchemaObject,
 } from "openapi3-ts";
 
 type SchemaEntry = SchemaObject | ReferenceObject;
