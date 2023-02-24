@@ -202,7 +202,7 @@ function traverseDefinition(
 
   if (!isSchemaObject(schema)) return schema;
 
-  if ((schema.allOf ?? schema.anyOf ?? schema.oneOf) !== undefined) {
+  if ((schema.allOf ?? schema.anyOf ?? schema.oneOf ?? schema.discriminator) !== undefined) {
     return {
       ...schema,
       allOf: schema.allOf?.map((subSchema) =>
@@ -250,6 +250,12 @@ function traverseDefinition(
                     ),
             }
           : undefined,
+          properties: schema.properties !== undefined ? Object.fromEntries(
+            Object.entries(schema.properties).map(([property, definition]) => [
+              property,
+              traverseDefinition(definition, callback),
+            ])
+          ) : undefined,
     };
   } else if (schema.not !== undefined) {
     return {
