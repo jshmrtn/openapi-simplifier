@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { parse, stringify } from "yaml";
 import {
   isReferenceObject,
@@ -11,7 +13,7 @@ import {
   type RequestBodyObject,
   type ResponseObject,
   type SchemaObject,
-} from "openapi3-ts";
+} from "openapi3-ts/oas31";
 
 type SchemaEntry = SchemaObject | ReferenceObject;
 
@@ -202,7 +204,10 @@ function traverseDefinition(
 
   if (!isSchemaObject(schema)) return schema;
 
-  if ((schema.allOf ?? schema.anyOf ?? schema.oneOf ?? schema.discriminator) !== undefined) {
+  if (
+    (schema.allOf ?? schema.anyOf ?? schema.oneOf ?? schema.discriminator) !==
+    undefined
+  ) {
     return {
       ...schema,
       allOf: schema.allOf?.map((subSchema) =>
@@ -246,16 +251,21 @@ function traverseDefinition(
                             traverseBareReference(definition.$ref, callback),
                           ];
                         })
-                        .filter(([name, $ref]) => name !== null)
+                        .filter(([name]) => name !== null)
                     ),
             }
           : undefined,
-          properties: schema.properties !== undefined ? Object.fromEntries(
-            Object.entries(schema.properties).map(([property, definition]) => [
-              property,
-              traverseDefinition(definition, callback),
-            ])
-          ) : undefined,
+      properties:
+        schema.properties !== undefined
+          ? Object.fromEntries(
+              Object.entries(schema.properties).map(
+                ([property, definition]) => [
+                  property,
+                  traverseDefinition(definition, callback),
+                ]
+              )
+            )
+          : undefined,
     };
   } else if (schema.not !== undefined) {
     return {
@@ -311,9 +321,7 @@ function filterObjectProperties(
   if (schema.properties === undefined) return schema;
 
   const properties = Object.fromEntries(
-    Object.entries(schema.properties).filter(([name, field]) =>
-      condition(field)
-    )
+    Object.entries(schema.properties).filter(([, field]) => condition(field))
   );
 
   const required = schema.required?.filter((name) => name in properties);

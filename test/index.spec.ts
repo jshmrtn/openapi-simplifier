@@ -1,6 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 import { simplifySchema } from "../src";
-import { type OpenAPIObject } from "openapi3-ts";
+import { type OpenAPIObject } from "openapi3-ts/oas31";
 
 type RecursivePartial<T> = {
   [P in keyof T]?: T[P] extends Array<infer U>
