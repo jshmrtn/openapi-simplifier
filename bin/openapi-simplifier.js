@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-const { program } = require("commander");
-const { version } = require("../package.json");
-const { simplifySchemaString } = require("../dist/index");
-const fs = require("fs");
+import { program } from "commander";
+import { version } from "../package.json";
+import { simplifySchemaString } from "../dist/index";
+import fs from "fs";
 
 program
   .name("openapi-simplifier")
