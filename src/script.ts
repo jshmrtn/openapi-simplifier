@@ -1,8 +1,6 @@
-#!/usr/bin/env node
-
 import { program } from "commander";
-import { version } from "../package.json";
-import { simplifySchemaString } from "../dist/index";
+import { version } from "../package.json" assert { type: "json" };
+import { simplifySchemaString } from "./index";
 import fs from "fs";
 
 program
@@ -17,8 +15,8 @@ program.parse();
 const [inputFile] = program.args;
 const { output } = program.opts();
 const outputWriter = output
-  ? (content) => fs.writeFileSync(output, content)
-  : (content) => process.stdout.write(content);
+  ? (content: string) => fs.writeFileSync(output, content)
+  : (content: string) => process.stdout.write(content);
 
 const content = fs.readFileSync(inputFile === "-" ? 0 : inputFile).toString();
 const simplfiedContent = simplifySchemaString(content);
