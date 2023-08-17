@@ -6,7 +6,7 @@ var yaml = require('yaml');
 var oas31 = require('openapi3-ts/oas31');
 var fs = require('fs');
 
-var version = "1.1.3-beta.1";
+var version = "1.1.3";
 
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
 /* eslint-disable @typescript-eslint/no-explicit-any */
