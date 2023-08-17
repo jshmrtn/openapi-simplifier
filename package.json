@@ -10,7 +10,8 @@
     "test:lint": "eslint .",
     "test:lint:fix": "eslint --fix .",
     "test:types": "tsc --noEmit",
-    "test:unit": "jest"
+    "test:unit": "jest",
+    "prepublishOnly": "npm run test && npm run build"
   },
   "author": {
     "name": "JOSHMARTIN GmbH",
