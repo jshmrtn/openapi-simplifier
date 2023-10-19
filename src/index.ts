@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { parse, stringify } from "yaml";
 import {
+  ContentObject,
   isReferenceObject,
   isSchemaObject,
   type MediaTypeObject,
@@ -24,7 +25,7 @@ export function simplifySchemaString(content: string): string {
 }
 
 export function simplifySchema(content: OpenAPIObject): OpenAPIObject {
-  return compose(duplicateReadWriteSchemas, repointSchemaReferences)(content);
+  return removeDuplicateJsonContent(content);
 }
 
 function readSchema(content: string): OpenAPIObject {
@@ -80,6 +81,82 @@ function repointSchemaReferences(schema: OpenAPIObject): OpenAPIObject {
             head: repointOperation(pathDefinition.head),
             patch: repointOperation(pathDefinition.patch),
             trace: repointOperation(pathDefinition.trace),
+          },
+        ];
+      })
+    ),
+  };
+}
+
+function removeDuplicateJsonContentInContent(content: ContentObject): ContentObject {
+  const resContent: ContentObject = {};
+  Object.entries(content ?? {}).forEach(([newKey, newMediaObj]) => {
+    const duplicateMediaObj = Object.entries(resContent).find(
+      ([_, mediaObj]) => JSON.stringify(mediaObj) === JSON.stringify(newMediaObj)
+    );
+    if (!duplicateMediaObj) {
+      resContent[newKey] = newMediaObj;
+      return;
+    }
+    if (newKey !== "application/json") {
+      return;
+    }
+    delete resContent[duplicateMediaObj[0]];
+    resContent[newKey] = newMediaObj;
+  });
+  return resContent;
+}
+
+function removeDuplicateJsonContentInOperation(schema: OperationObject | undefined): OperationObject | undefined {
+  if (schema === undefined) return undefined;
+
+  const getRequestBody = (
+    requestBody: RequestBodyObject | ReferenceObject | undefined
+  ): RequestBodyObject | ReferenceObject | undefined => {
+    if (!requestBody || !("content" in requestBody)) {
+      return requestBody;
+    }
+    const newRequestBody = { ...requestBody };
+    newRequestBody.content = removeDuplicateJsonContentInContent(newRequestBody.content);
+    return newRequestBody;
+  };
+
+  return {
+    ...schema,
+    requestBody: getRequestBody(schema.requestBody),
+    responses: Object.fromEntries(
+      Object.entries<ResponseObject | ReferenceObject>(schema.responses).map(([code, response]) => {
+        if ("content" in response && response.content) {
+          return [code, { ...response, content: removeDuplicateJsonContentInContent(response.content) }];
+        }
+
+        return [code, { response }];
+      })
+    ),
+  };
+}
+
+function removeDuplicateJsonContent(schema: OpenAPIObject): OpenAPIObject {
+  if (schema.paths == null) return schema;
+
+  return {
+    ...schema,
+    paths: Object.fromEntries(
+      Object.entries(schema.paths).map(([path, pathDefinition]) => {
+        if (!isSpecifiedPath(pathDefinition)) return [path, pathDefinition];
+
+        return [
+          path,
+          {
+            ...pathDefinition,
+            get: removeDuplicateJsonContentInOperation(pathDefinition.get),
+            put: removeDuplicateJsonContentInOperation(pathDefinition.put),
+            post: removeDuplicateJsonContentInOperation(pathDefinition.post),
+            delete: removeDuplicateJsonContentInOperation(pathDefinition.delete),
+            options: removeDuplicateJsonContentInOperation(pathDefinition.options),
+            head: removeDuplicateJsonContentInOperation(pathDefinition.head),
+            patch: removeDuplicateJsonContentInOperation(pathDefinition.patch),
+            trace: removeDuplicateJsonContentInOperation(pathDefinition.trace),
           },
         ];
       })
