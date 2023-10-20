@@ -18,14 +18,32 @@ import {
 
 type SchemaEntry = SchemaObject | ReferenceObject;
 
-export function simplifySchemaString(content: string): string {
-  return compose(compose(readSchema, simplifySchema), (schema) =>
-    stringify(schema, { indent: 2, aliasDuplicateObjects: false })
-  )(content);
+export const availableOptimizations = {
+  "duplicate-read-write-schema": duplicateReadWriteSchemas,
+  "repoint-schema-refs": repointSchemaReferences,
+  "remove-duplicate-json-content": removeDuplicateJsonContent,
+};
+
+export type OptimizationKey = keyof typeof availableOptimizations;
+
+export function simplifySchemaString(
+  content: string,
+  optimizations: OptimizationKey[] = Object.keys(availableOptimizations) as OptimizationKey[]
+): string {
+  const parsedSchema = readSchema(content);
+  const simplifiedSchema = simplifySchema(parsedSchema, optimizations);
+  return stringify(simplifiedSchema, { indent: 2, aliasDuplicateObjects: false });
 }
 
-export function simplifySchema(content: OpenAPIObject): OpenAPIObject {
-  return removeDuplicateJsonContent(content);
+export function simplifySchema(
+  content: OpenAPIObject,
+  optimizations: OptimizationKey[] = Object.keys(availableOptimizations) as OptimizationKey[]
+): OpenAPIObject {
+  let schema = content;
+  for (const optKey of optimizations) {
+    schema = availableOptimizations[optKey](schema);
+  }
+  return schema;
 }
 
 function readSchema(content: string): OpenAPIObject {
