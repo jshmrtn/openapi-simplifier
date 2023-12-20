@@ -199,4 +199,88 @@ describe("simplifySchema", () => {
 
     expect(simplifySchema(input)).toMatchObject(expected);
   });
+
+  test("removes non-whitelisted content types", () => {
+    const input: OpenAPIObject = {
+      ...baseSchema,
+      components: {
+        schemas: {
+          Name: {
+            type: "object",
+          },
+        },
+      },
+      paths: {
+        "/url": {
+          get: {
+            requestBody: {
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/Name",
+                  },
+                },
+                "application/myschema.v2+json": {
+                  schema: {
+                    $ref: "#/components/schemas/Name",
+                  },
+                },
+              },
+            },
+            responses: {
+              "200": {
+                description: "ok",
+                content: {
+                  "application/myschema.v1+json": {
+                    schema: {
+                      $ref: "#/components/schemas/Name",
+                    },
+                  },
+                  "application/json": {
+                    schema: {
+                      $ref: "#/components/schemas/Name",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const expected: OptionalOpenAPIObject = {
+      paths: {
+        "/url": {
+          get: {
+            requestBody: {
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/Name",
+                  },
+                },
+              },
+            },
+            responses: {
+              "200": {
+                content: {
+                  "application/json": {
+                    schema: {
+                      $ref: "#/components/schemas/Name",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    expect(
+      simplifySchema(input, ["filter-content-types"], {
+        allowedResponseContentTypes: ["application/json"],
+      })
+    ).toMatchObject(expected);
+  });
 });

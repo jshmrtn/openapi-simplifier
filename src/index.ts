@@ -171,8 +171,20 @@ function filterContentTypesInOperation(
 ): OperationObject | undefined {
   if (schema === undefined) return undefined;
 
+  const getRequestBody = (
+    requestBody: RequestBodyObject | ReferenceObject | undefined
+  ): RequestBodyObject | ReferenceObject | undefined => {
+    if (!requestBody || !("content" in requestBody)) {
+      return requestBody;
+    }
+    const newRequestBody = { ...requestBody };
+    newRequestBody.content = filterContentTypesInContent(newRequestBody.content, whitelist);
+    return newRequestBody;
+  };
+
   return {
     ...schema,
+    requestBody: getRequestBody(schema.requestBody),
     responses: Object.fromEntries(
       Object.entries<ResponseObject | ReferenceObject>(schema.responses).map(([code, response]) => {
         if ("content" in response && response.content) {
