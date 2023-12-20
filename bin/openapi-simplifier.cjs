@@ -3,10 +3,10 @@
 
 var commander = require('commander');
 var fs = require('fs');
-var yaml = require('yaml');
 var oas31 = require('openapi3-ts/oas31');
+var yaml = require('yaml');
 
-var version = "1.1.3";
+var version = "1.2.0";
 
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -14,16 +14,17 @@ const availableOptimizations = {
     "duplicate-read-write-schema": duplicateReadWriteSchemas,
     "repoint-schema-refs": repointSchemaReferences,
     "remove-duplicate-json-content": removeDuplicateJsonContent,
+    "filter-content-types": filterContentTypes,
 };
-function simplifySchemaString(content, optimizations = Object.keys(availableOptimizations)) {
+function simplifySchemaString(content, optimizations = Object.keys(availableOptimizations), optimizationArgs) {
     const parsedSchema = readSchema(content);
-    const simplifiedSchema = simplifySchema(parsedSchema, optimizations);
+    const simplifiedSchema = simplifySchema(parsedSchema, optimizations, optimizationArgs);
     return yaml.stringify(simplifiedSchema, { indent: 2, aliasDuplicateObjects: false });
 }
-function simplifySchema(content, optimizations = Object.keys(availableOptimizations)) {
+function simplifySchema(content, optimizations = Object.keys(availableOptimizations), optimizationArgs) {
     let schema = content;
     for (const optKey of optimizations) {
-        schema = availableOptimizations[optKey](schema);
+        schema = availableOptimizations[optKey](schema, optimizationArgs);
     }
     return schema;
 }
@@ -97,6 +98,58 @@ function removeDuplicateJsonContentInContent(content) {
     });
     return resContent;
 }
+function filterContentTypes(schema, args) {
+    var _a;
+    if (!schema.paths)
+        return schema;
+    const whitelist = (_a = args === null || args === void 0 ? void 0 : args.allowedResponseContentTypes) !== null && _a !== void 0 ? _a : [];
+    if (whitelist.length === 0) {
+        return schema;
+    }
+    return {
+        ...schema,
+        paths: Object.fromEntries(Object.entries(schema.paths).map(([path, pathDefinition]) => {
+            if (!isSpecifiedPath(pathDefinition))
+                return [path, pathDefinition];
+            return [
+                path,
+                {
+                    ...pathDefinition,
+                    get: filterContentTypesInOperation(pathDefinition.get, whitelist),
+                    put: filterContentTypesInOperation(pathDefinition.put, whitelist),
+                    post: filterContentTypesInOperation(pathDefinition.post, whitelist),
+                    delete: filterContentTypesInOperation(pathDefinition.delete, whitelist),
+                    options: filterContentTypesInOperation(pathDefinition.options, whitelist),
+                    head: filterContentTypesInOperation(pathDefinition.head, whitelist),
+                    patch: filterContentTypesInOperation(pathDefinition.patch, whitelist),
+                    trace: filterContentTypesInOperation(pathDefinition.trace, whitelist),
+                },
+            ];
+        })),
+    };
+}
+function filterContentTypesInOperation(schema, whitelist) {
+    if (schema === undefined)
+        return undefined;
+    return {
+        ...schema,
+        responses: Object.fromEntries(Object.entries(schema.responses).map(([code, response]) => {
+            if ("content" in response && response.content) {
+                return [code, { ...response, content: filterContentTypesInContent(response.content, whitelist) }];
+            }
+            return [code, { response }];
+        })),
+    };
+}
+function filterContentTypesInContent(content, whitelist) {
+    const resContent = {};
+    Object.entries(content !== null && content !== void 0 ? content : {}).forEach(([newKey, newMediaObj]) => {
+        if (whitelist.includes(newKey)) {
+            resContent[newKey] = newMediaObj;
+        }
+    });
+    return resContent;
+}
 function removeDuplicateJsonContentInOperation(schema) {
     if (schema === undefined)
         return undefined;
@@ -120,7 +173,7 @@ function removeDuplicateJsonContentInOperation(schema) {
     };
 }
 function removeDuplicateJsonContent(schema) {
-    if (schema.paths == null)
+    if (!schema.paths)
         return schema;
     return {
         ...schema,
@@ -309,10 +362,11 @@ commander.program
     .version(version)
     .argument("<string>", "input file")
     .option("-o, --output <string>", "output file")
-    .option("-i, --include [string...]", `apply only certain optimizations. available optimizations: ${Object.keys(availableOptimizations).join(", ")}`);
+    .option("-i, --include [string...]", `apply only certain optimizations. available optimizations: ${Object.keys(availableOptimizations).join(", ")}`)
+    .option("--allowed-response-content-types [string]", "allowed content types in responses, works only if filter-content-types optimization is enabled");
 commander.program.parse();
 const [inputFile] = commander.program.args;
-const { output, include } = commander.program.opts();
+const { output, include, allowedResponseContentTypes, } = commander.program.opts();
 const wrongOpt = include === null || include === void 0 ? void 0 : include.find((o) => !(o in availableOptimizations));
 if (wrongOpt) {
     commander.program.error(`Unexpected optimization: "${wrongOpt}" is not defined.`, { exitCode: 2 });
@@ -320,6 +374,9 @@ if (wrongOpt) {
 const outputWriter = output
     ? (content) => fs.writeFileSync(output, content)
     : (content) => process.stdout.write(content);
+const optimizationArgs = {
+    allowedResponseContentTypes,
+};
 const content = fs.readFileSync(inputFile === "-" ? 0 : inputFile).toString();
-const simplfiedContent = simplifySchemaString(content, include);
+const simplfiedContent = simplifySchemaString(content, include, optimizationArgs);
 outputWriter(simplfiedContent);

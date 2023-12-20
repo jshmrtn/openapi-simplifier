@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { parse, stringify } from "yaml";
 import {
   ContentObject,
   isReferenceObject,
@@ -15,6 +14,7 @@ import {
   type ResponseObject,
   type SchemaObject,
 } from "openapi3-ts/oas31";
+import { parse, stringify } from "yaml";
 
 type SchemaEntry = SchemaObject | ReferenceObject;
 
@@ -22,26 +22,33 @@ export const availableOptimizations = {
   "duplicate-read-write-schema": duplicateReadWriteSchemas,
   "repoint-schema-refs": repointSchemaReferences,
   "remove-duplicate-json-content": removeDuplicateJsonContent,
+  "filter-content-types": filterContentTypes,
 };
 
 export type OptimizationKey = keyof typeof availableOptimizations;
 
+export type OptimizationArgs = {
+  allowedResponseContentTypes: string[];
+};
+
 export function simplifySchemaString(
   content: string,
-  optimizations: OptimizationKey[] = Object.keys(availableOptimizations) as OptimizationKey[]
+  optimizations: OptimizationKey[] = Object.keys(availableOptimizations) as OptimizationKey[],
+  optimizationArgs?: OptimizationArgs
 ): string {
   const parsedSchema = readSchema(content);
-  const simplifiedSchema = simplifySchema(parsedSchema, optimizations);
+  const simplifiedSchema = simplifySchema(parsedSchema, optimizations, optimizationArgs);
   return stringify(simplifiedSchema, { indent: 2, aliasDuplicateObjects: false });
 }
 
 export function simplifySchema(
   content: OpenAPIObject,
-  optimizations: OptimizationKey[] = Object.keys(availableOptimizations) as OptimizationKey[]
+  optimizations: OptimizationKey[] = Object.keys(availableOptimizations) as OptimizationKey[],
+  optimizationArgs?: OptimizationArgs
 ): OpenAPIObject {
   let schema = content;
   for (const optKey of optimizations) {
-    schema = availableOptimizations[optKey](schema);
+    schema = availableOptimizations[optKey](schema, optimizationArgs);
   }
   return schema;
 }
@@ -125,6 +132,69 @@ function removeDuplicateJsonContentInContent(content: ContentObject): ContentObj
   return resContent;
 }
 
+function filterContentTypes(schema: OpenAPIObject, args?: OptimizationArgs): OpenAPIObject {
+  if (!schema.paths) return schema;
+
+  const whitelist = args?.allowedResponseContentTypes ?? [];
+  if (whitelist.length === 0) {
+    return schema;
+  }
+
+  return {
+    ...schema,
+    paths: Object.fromEntries(
+      Object.entries(schema.paths).map(([path, pathDefinition]) => {
+        if (!isSpecifiedPath(pathDefinition)) return [path, pathDefinition];
+
+        return [
+          path,
+          {
+            ...pathDefinition,
+            get: filterContentTypesInOperation(pathDefinition.get, whitelist),
+            put: filterContentTypesInOperation(pathDefinition.put, whitelist),
+            post: filterContentTypesInOperation(pathDefinition.post, whitelist),
+            delete: filterContentTypesInOperation(pathDefinition.delete, whitelist),
+            options: filterContentTypesInOperation(pathDefinition.options, whitelist),
+            head: filterContentTypesInOperation(pathDefinition.head, whitelist),
+            patch: filterContentTypesInOperation(pathDefinition.patch, whitelist),
+            trace: filterContentTypesInOperation(pathDefinition.trace, whitelist),
+          },
+        ];
+      })
+    ),
+  };
+}
+
+function filterContentTypesInOperation(
+  schema: OperationObject | undefined,
+  whitelist: string[]
+): OperationObject | undefined {
+  if (schema === undefined) return undefined;
+
+  return {
+    ...schema,
+    responses: Object.fromEntries(
+      Object.entries<ResponseObject | ReferenceObject>(schema.responses).map(([code, response]) => {
+        if ("content" in response && response.content) {
+          return [code, { ...response, content: filterContentTypesInContent(response.content, whitelist) }];
+        }
+
+        return [code, { response }];
+      })
+    ),
+  };
+}
+
+function filterContentTypesInContent(content: ContentObject, whitelist: string[]): ContentObject {
+  const resContent: ContentObject = {};
+  Object.entries(content ?? {}).forEach(([newKey, newMediaObj]) => {
+    if (whitelist.includes(newKey)) {
+      resContent[newKey] = newMediaObj;
+    }
+  });
+  return resContent;
+}
+
 function removeDuplicateJsonContentInOperation(schema: OperationObject | undefined): OperationObject | undefined {
   if (schema === undefined) return undefined;
 
@@ -155,7 +225,7 @@ function removeDuplicateJsonContentInOperation(schema: OperationObject | undefin
 }
 
 function removeDuplicateJsonContent(schema: OpenAPIObject): OpenAPIObject {
-  if (schema.paths == null) return schema;
+  if (!schema.paths) return schema;
 
   return {
     ...schema,
