@@ -62,6 +62,8 @@ function extractInOperation(
 ): OperationObject | undefined {
   if (schema === undefined) return undefined;
 
+  // TODO: only return operation when original mime type is part of request content
+
   const getRequestBody = (
     requestBody: RequestBodyObject | ReferenceObject | undefined
   ): RequestBodyObject | ReferenceObject | undefined => {

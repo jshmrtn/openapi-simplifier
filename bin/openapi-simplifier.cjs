@@ -6,7 +6,190 @@ var fs = require('fs');
 var oas31 = require('openapi3-ts/oas31');
 var yaml = require('yaml');
 
-var version = "1.3.0-alpha.1";
+var version = "1.3.0-alpha.2";
+
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function isSpecifiedPath(path) {
+    return typeof path === "object";
+}
+function isResponseObject(response) {
+    return "description" in response;
+}
+function isRequestBody(response) {
+    return response !== undefined && "content" in response;
+}
+function isRequestParameter(parameter) {
+    return parameter !== undefined && "in" in parameter;
+}
+function traverseDefinition(schema, callback) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    schema = callback(schema);
+    if (!oas31.isSchemaObject(schema))
+        return schema;
+    if (((_c = (_b = (_a = schema.allOf) !== null && _a !== void 0 ? _a : schema.anyOf) !== null && _b !== void 0 ? _b : schema.oneOf) !== null && _c !== void 0 ? _c : schema.discriminator) !==
+        undefined) {
+        return {
+            ...schema,
+            allOf: (_d = schema.allOf) === null || _d === void 0 ? void 0 : _d.map((subSchema) => traverseDefinition(subSchema, callback)),
+            anyOf: (_e = schema.anyOf) === null || _e === void 0 ? void 0 : _e.map((subSchema) => traverseDefinition(subSchema, callback)),
+            oneOf: (_f = schema.oneOf) === null || _f === void 0 ? void 0 : _f.map((subSchema) => traverseDefinition(subSchema, callback)),
+            discriminator: schema.discriminator !== undefined
+                ? {
+                    ...schema.discriminator,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    mapping: schema.discriminator.mapping !== undefined
+                        ? Object.fromEntries(Object.entries(schema.discriminator.mapping).map(([name, $ref]) => [
+                            name,
+                            traverseBareReference($ref, callback),
+                        ]))
+                        : Object.fromEntries([
+                            ...((_g = schema.allOf) !== null && _g !== void 0 ? _g : []),
+                            ...((_h = schema.anyOf) !== null && _h !== void 0 ? _h : []),
+                            ...((_j = schema.oneOf) !== null && _j !== void 0 ? _j : []),
+                        ]
+                            .map((definition) => {
+                            if (!oas31.isReferenceObject(definition))
+                                return [
+                                    null,
+                                    traverseDefinition(definition, callback),
+                                ];
+                            return [
+                                definition.$ref.split("/").pop(),
+                                traverseBareReference(definition.$ref, callback),
+                            ];
+                        })
+                            .filter(([name]) => name !== null)),
+                }
+                : undefined,
+            properties: schema.properties !== undefined
+                ? Object.fromEntries(Object.entries(schema.properties).map(([property, definition]) => [
+                    property,
+                    traverseDefinition(definition, callback),
+                ]))
+                : undefined,
+        };
+    }
+    else if (schema.not !== undefined) {
+        return {
+            ...schema,
+            not: traverseDefinition(schema.not, callback),
+        };
+    }
+    else if (oas31.isSchemaObject(schema) &&
+        schema.type === "array" &&
+        schema.items !== undefined) {
+        return {
+            ...schema,
+            items: traverseDefinition(schema.items, callback),
+        };
+    }
+    else if (oas31.isSchemaObject(schema) &&
+        schema.type === "object" &&
+        schema.properties !== undefined) {
+        return {
+            ...schema,
+            properties: Object.fromEntries(Object.entries(schema.properties).map(([property, definition]) => [
+                property,
+                traverseDefinition(definition, callback),
+            ])),
+        };
+    }
+    return schema;
+}
+function traverseBareReference($ref, callback) {
+    const traversedDefinition = traverseDefinition({ $ref }, callback);
+    if (!oas31.isReferenceObject(traversedDefinition))
+        throw new Error(`Invalid definition ${JSON.stringify(traversedDefinition)}`);
+    return traversedDefinition.$ref;
+}
+function filterObjectProperties(schema, condition) {
+    var _a;
+    if (!oas31.isSchemaObject(schema))
+        return schema;
+    if (schema.properties === undefined)
+        return schema;
+    const properties = Object.fromEntries(Object.entries(schema.properties).filter(([, field]) => condition(field)));
+    const required = (_a = schema.required) === null || _a === void 0 ? void 0 : _a.filter((name) => name in properties);
+    return { ...schema, properties, required };
+}
+
+function extractSchemaVersion(schema, optimizationArgs) {
+    var _a;
+    if (!schema.paths)
+        return schema;
+    if (!(optimizationArgs === null || optimizationArgs === void 0 ? void 0 : optimizationArgs.schemaVersionMimeType)) {
+        throw new Error("Missing option schema-version-mime-type");
+    }
+    const options = {
+        mimeTypes: [
+            optimizationArgs.schemaVersionMimeType,
+            ...((_a = optimizationArgs.schemaVersionMimeTypeFallback) !== null && _a !== void 0 ? _a : []),
+            "application/json",
+        ],
+    };
+    return {
+        ...schema,
+        paths: Object.fromEntries(Object.entries(schema.paths).map(([path, pathDefinition]) => {
+            if (!isSpecifiedPath(pathDefinition))
+                return [path, pathDefinition];
+            return [
+                path,
+                {
+                    ...pathDefinition,
+                    get: extractInOperation(pathDefinition.get, options),
+                    put: extractInOperation(pathDefinition.put, options),
+                    post: extractInOperation(pathDefinition.post, options),
+                    delete: extractInOperation(pathDefinition.delete, options),
+                    options: extractInOperation(pathDefinition.options, options),
+                    head: extractInOperation(pathDefinition.head, options),
+                    patch: extractInOperation(pathDefinition.patch, options),
+                    trace: extractInOperation(pathDefinition.trace, options),
+                },
+            ];
+        })),
+    };
+}
+function extractInOperation(schema, options) {
+    var _a;
+    if (schema === undefined)
+        return undefined;
+    const getRequestBody = (requestBody) => {
+        if (!requestBody || !("content" in requestBody)) {
+            return requestBody;
+        }
+        const newRequestBody = { ...requestBody };
+        newRequestBody.content = extractInContent(newRequestBody.content, options);
+        return newRequestBody;
+    };
+    return {
+        ...schema,
+        requestBody: getRequestBody(schema.requestBody),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        responses: Object.fromEntries(Object.entries((_a = schema.responses) !== null && _a !== void 0 ? _a : {}).map(([code, response]) => {
+            if ("content" in response && response.content) {
+                return [
+                    code,
+                    {
+                        ...response,
+                        content: extractInContent(response.content, options),
+                    },
+                ];
+            }
+            return [code, { response }];
+        })),
+    };
+}
+function extractInContent(content, options) {
+    for (const mimeType of options.mimeTypes) {
+        if (mimeType in content) {
+            return {
+                "application/json": content[mimeType],
+            };
+        }
+    }
+    return content;
+}
 
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -15,11 +198,15 @@ const availableOptimizations = {
     "repoint-schema-refs": repointSchemaReferences,
     "remove-duplicate-json-content": removeDuplicateJsonContent,
     "filter-content-types": filterContentTypes,
+    "extract-schema-version": extractSchemaVersion,
 };
 function simplifySchemaString(content, optimizations = Object.keys(availableOptimizations), optimizationArgs) {
     const parsedSchema = readSchema(content);
     const simplifiedSchema = simplifySchema(parsedSchema, optimizations, optimizationArgs);
-    return yaml.stringify(simplifiedSchema, { indent: 2, aliasDuplicateObjects: false });
+    return yaml.stringify(simplifiedSchema, {
+        indent: 2,
+        aliasDuplicateObjects: false,
+    });
 }
 function simplifySchema(content, optimizations = Object.keys(availableOptimizations), optimizationArgs) {
     let schema = content;
@@ -129,13 +316,29 @@ function filterContentTypes(schema, args) {
     };
 }
 function filterContentTypesInOperation(schema, whitelist) {
+    var _a;
     if (schema === undefined)
         return undefined;
+    const getRequestBody = (requestBody) => {
+        if (!requestBody || !("content" in requestBody)) {
+            return requestBody;
+        }
+        const newRequestBody = { ...requestBody };
+        newRequestBody.content = filterContentTypesInContent(newRequestBody.content, whitelist);
+        return newRequestBody;
+    };
     return {
         ...schema,
-        responses: Object.fromEntries(Object.entries(schema.responses).map(([code, response]) => {
+        requestBody: getRequestBody(schema.requestBody),
+        responses: Object.fromEntries(Object.entries((_a = schema.responses) !== null && _a !== void 0 ? _a : {}).map(([code, response]) => {
             if ("content" in response && response.content) {
-                return [code, { ...response, content: filterContentTypesInContent(response.content, whitelist) }];
+                return [
+                    code,
+                    {
+                        ...response,
+                        content: filterContentTypesInContent(response.content, whitelist),
+                    },
+                ];
             }
             return [code, { response }];
         })),
@@ -151,6 +354,7 @@ function filterContentTypesInContent(content, whitelist) {
     return resContent;
 }
 function removeDuplicateJsonContentInOperation(schema) {
+    var _a;
     if (schema === undefined)
         return undefined;
     const getRequestBody = (requestBody) => {
@@ -164,9 +368,15 @@ function removeDuplicateJsonContentInOperation(schema) {
     return {
         ...schema,
         requestBody: getRequestBody(schema.requestBody),
-        responses: Object.fromEntries(Object.entries(schema.responses).map(([code, response]) => {
+        responses: Object.fromEntries(Object.entries((_a = schema.responses) !== null && _a !== void 0 ? _a : {}).map(([code, response]) => {
             if ("content" in response && response.content) {
-                return [code, { ...response, content: removeDuplicateJsonContentInContent(response.content) }];
+                return [
+                    code,
+                    {
+                        ...response,
+                        content: removeDuplicateJsonContentInContent(response.content),
+                    },
+                ];
             }
             return [code, { response }];
         })),
@@ -198,14 +408,17 @@ function removeDuplicateJsonContent(schema) {
     };
 }
 function repointOperation(schema) {
-    var _a;
+    var _a, _b;
     if (schema === undefined)
         return undefined;
     return {
         ...schema,
-        responses: Object.fromEntries(Object.entries(schema.responses).map(([code, response]) => [code, repointResponse(response)])),
+        responses: Object.fromEntries(Object.entries((_a = schema.responses) !== null && _a !== void 0 ? _a : {}).map(([code, response]) => [
+            code,
+            repointResponse(response),
+        ])),
         requestBody: repointRequestBody(schema.requestBody),
-        parameters: (_a = schema.parameters) === null || _a === void 0 ? void 0 : _a.map(repointRequestparameter),
+        parameters: (_b = schema.parameters) === null || _b === void 0 ? void 0 : _b.map(repointRequestparameter),
     };
 }
 function repointRequestparameter(schema) {
@@ -238,7 +451,10 @@ function repointResponse(schema) {
         return schema;
     return {
         ...schema,
-        content: Object.fromEntries(Object.entries(schema.content).map(([mediaType, definition]) => [mediaType, repointMediaType(definition, "Read")])),
+        content: Object.fromEntries(Object.entries(schema.content).map(([mediaType, definition]) => [
+            mediaType,
+            repointMediaType(definition, "Read"),
+        ])),
     };
 }
 function repointMediaType(schema, append) {
@@ -248,93 +464,6 @@ function repointMediaType(schema, append) {
         ...schema,
         schema: traverseDefinition(schema.schema, updateDuplicatedSchemaRef(append)),
     };
-}
-function isSpecifiedPath(path) {
-    return typeof path === "object";
-}
-function isResponseObject(response) {
-    return "description" in response;
-}
-function isRequestBody(response) {
-    return response !== undefined && "content" in response;
-}
-function isRequestParameter(parameter) {
-    return parameter !== undefined && "in" in parameter;
-}
-function traverseDefinition(schema, callback) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
-    schema = callback(schema);
-    if (!oas31.isSchemaObject(schema))
-        return schema;
-    if (((_c = (_b = (_a = schema.allOf) !== null && _a !== void 0 ? _a : schema.anyOf) !== null && _b !== void 0 ? _b : schema.oneOf) !== null && _c !== void 0 ? _c : schema.discriminator) !== undefined) {
-        return {
-            ...schema,
-            allOf: (_d = schema.allOf) === null || _d === void 0 ? void 0 : _d.map((subSchema) => traverseDefinition(subSchema, callback)),
-            anyOf: (_e = schema.anyOf) === null || _e === void 0 ? void 0 : _e.map((subSchema) => traverseDefinition(subSchema, callback)),
-            oneOf: (_f = schema.oneOf) === null || _f === void 0 ? void 0 : _f.map((subSchema) => traverseDefinition(subSchema, callback)),
-            discriminator: schema.discriminator !== undefined
-                ? {
-                    ...schema.discriminator,
-                    mapping: schema.discriminator.mapping !== undefined
-                        ? Object.fromEntries(Object.entries(schema.discriminator.mapping).map(([name, $ref]) => [
-                            name,
-                            traverseBareReference($ref, callback),
-                        ]))
-                        : Object.fromEntries([...((_g = schema.allOf) !== null && _g !== void 0 ? _g : []), ...((_h = schema.anyOf) !== null && _h !== void 0 ? _h : []), ...((_j = schema.oneOf) !== null && _j !== void 0 ? _j : [])]
-                            .map((definition) => {
-                            if (!oas31.isReferenceObject(definition))
-                                return [null, traverseDefinition(definition, callback)];
-                            return [definition.$ref.split("/").pop(), traverseBareReference(definition.$ref, callback)];
-                        })
-                            .filter(([name]) => name !== null)),
-                }
-                : undefined,
-            properties: schema.properties !== undefined
-                ? Object.fromEntries(Object.entries(schema.properties).map(([property, definition]) => [
-                    property,
-                    traverseDefinition(definition, callback),
-                ]))
-                : undefined,
-        };
-    }
-    else if (schema.not !== undefined) {
-        return {
-            ...schema,
-            not: traverseDefinition(schema.not, callback),
-        };
-    }
-    else if (oas31.isSchemaObject(schema) && schema.type === "array" && schema.items !== undefined) {
-        return {
-            ...schema,
-            items: traverseDefinition(schema.items, callback),
-        };
-    }
-    else if (oas31.isSchemaObject(schema) && schema.type === "object" && schema.properties !== undefined) {
-        return {
-            ...schema,
-            properties: Object.fromEntries(Object.entries(schema.properties).map(([property, definition]) => [
-                property,
-                traverseDefinition(definition, callback),
-            ])),
-        };
-    }
-    return schema;
-}
-function traverseBareReference($ref, callback) {
-    const traversedDefinition = traverseDefinition({ $ref }, callback);
-    if (!oas31.isReferenceObject(traversedDefinition))
-        throw new Error(`Invalid definition ${JSON.stringify(traversedDefinition)}`);
-    return traversedDefinition.$ref;
-}
-function filterObjectProperties(schema, condition) {
-    var _a;
-    if (!oas31.isSchemaObject(schema))
-        return schema;
-    if (schema.properties === undefined)
-        return schema;
-    const properties = Object.fromEntries(Object.entries(schema.properties).filter(([, field]) => condition(field)));
-    const required = (_a = schema.required) === null || _a === void 0 ? void 0 : _a.filter((name) => name in properties);
-    return { ...schema, properties, required };
 }
 function removeWriteOnly(schema) {
     return filterObjectProperties(schema, (field) => !("writeOnly" in field) || field.writeOnly === false);
@@ -363,19 +492,25 @@ commander.program
     .argument("<string>", "input file")
     .option("-o, --output <string>", "output file")
     .option("-i, --include [string...]", `apply only certain optimizations. available optimizations: ${Object.keys(availableOptimizations).join(", ")}`)
-    .option("--allowed-response-content-types [string]", "allowed content types in responses, works only if filter-content-types optimization is enabled");
+    .option("--allowed-response-content-types [string]", "allowed content types in responses, works only if filter-content-types optimization is enabled")
+    .option("--schema-version-mime-type <string>", "a mime type of a request content or response type to extract, works only if extract-schema-version optimization is enabled")
+    .option("--schema-version-mime-type-fallback [string]", "fallback mime types if `schema-version-mime-type` is not available, works only if extract-schema-version optimization is enabled");
 commander.program.parse();
 const [inputFile] = commander.program.args;
-const { output, include, allowedResponseContentTypes, } = commander.program.opts();
+const { output, include, allowedResponseContentTypes, schemaVersionMimeType, schemaVersionMimeTypeFallback, } = commander.program.opts();
 const wrongOpt = include === null || include === void 0 ? void 0 : include.find((o) => !(o in availableOptimizations));
 if (wrongOpt) {
-    commander.program.error(`Unexpected optimization: "${wrongOpt}" is not defined.`, { exitCode: 2 });
+    commander.program.error(`Unexpected optimization: "${wrongOpt}" is not defined.`, {
+        exitCode: 2,
+    });
 }
 const outputWriter = output
     ? (content) => fs.writeFileSync(output, content)
     : (content) => process.stdout.write(content);
 const optimizationArgs = {
     allowedResponseContentTypes,
+    schemaVersionMimeType,
+    schemaVersionMimeTypeFallback,
 };
 const content = fs.readFileSync(inputFile === "-" ? 0 : inputFile).toString();
 const simplfiedContent = simplifySchemaString(content, include, optimizationArgs);
