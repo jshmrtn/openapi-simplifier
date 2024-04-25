@@ -6,8 +6,8 @@ type RecursivePartial<T> = {
   [P in keyof T]?: T[P] extends Array<infer U>
     ? Array<RecursivePartial<U>>
     : T[P] extends object
-    ? RecursivePartial<T[P]>
-    : T[P];
+      ? RecursivePartial<T[P]>
+      : T[P];
 };
 
 type OptionalOpenAPIObject = RecursivePartial<OpenAPIObject>;
@@ -69,7 +69,9 @@ describe("simplifySchema", () => {
       },
     };
 
-    expect(simplifySchema(input)).toMatchObject(expected);
+    expect(
+      simplifySchema(input, ["duplicate-read-write-schema"])
+    ).toMatchObject(expected);
   });
 
   test("corrects schema names in schemas", () => {
@@ -101,7 +103,9 @@ describe("simplifySchema", () => {
       },
     };
 
-    expect(simplifySchema(input)).toMatchObject(expected);
+    expect(
+      simplifySchema(input, ["duplicate-read-write-schema"])
+    ).toMatchObject(expected);
   });
 
   test("corrects schema names in paths", () => {
@@ -197,7 +201,12 @@ describe("simplifySchema", () => {
       },
     };
 
-    expect(simplifySchema(input)).toMatchObject(expected);
+    expect(
+      simplifySchema(input, [
+        "duplicate-read-write-schema",
+        "repoint-schema-refs",
+      ])
+    ).toMatchObject(expected);
   });
 
   test("removes non-whitelisted content types", () => {
